@@ -21,7 +21,8 @@ module CFPropertyList
       end
 
       if @doc
-        root = import_plain
+        root = import_plain(true)  # allow braceless dict at top level
+        skip_whitespaces
         raise CFFormatError.new('content after root object') unless @doc.eos?
 
         return root
@@ -174,8 +175,62 @@ module CFPropertyList
       CFData.new([hex_str].pack("H*"), CFData::DATA_RAW)
     end
 
+    def read_braceless_dict
+      skip_whitespaces
+      hsh = {}
+
+      while not @doc.eos?
+        # Save position in case we can't parse a dict entry
+        saved_pos = @doc.pos
+
+        # Try to read a key
+        key = nil
+        if @doc.scan(/"/)
+          key = read_quoted
+        elsif @doc.scan(/</)
+          key = read_binary
+        else
+          key = read_unquoted rescue nil
+        end
+
+        break if !key
+
+        # Convert key to string
+        if key.is_a?(CFString)
+          key = key.value
+        elsif key.is_a?(CFInteger) or key.is_a?(CFReal)
+          key = key.value.to_s
+        else
+          # Not a valid key, restore position and stop parsing dict entries
+          @doc.pos = saved_pos
+          break
+        end
+
+        skip_whitespaces
+
+        # Check for = sign - if not present, this isn't a dict entry
+        unless @doc.scan(/=/)
+          @doc.pos = saved_pos
+          break
+        end
+
+        skip_whitespaces
+        val = import_plain
+
+        skip_whitespaces
+        unless @doc.scan(/;/)
+          raise CFFormatError.new("invalid dictionary format")
+        end
+        skip_whitespaces
+
+        hsh[key] = val
+      end
+
+      CFDictionary.new(hsh)
+    end
+
     # import the XML values
-    def import_plain
+    def import_plain(allow_braceless_dict = false)
       skip_whitespaces
       ret = nil
 
@@ -183,12 +238,40 @@ module CFPropertyList
         ret = read_dict
       elsif @doc.scan(/\(/) # array
         ret = read_array
-      elsif @doc.scan(/"/) # string
-        ret = read_quoted
+      elsif @doc.check(/"/) # might be string or dict key
+        if allow_braceless_dict
+          # Save position BEFORE scanning the quote
+          saved_pos = @doc.pos
+          @doc.scan(/"/)  # consume the quote
+          ret = read_quoted
+          skip_whitespaces
+          if @doc.check(/=/)
+            # This is actually a braceless dictionary
+            @doc.pos = saved_pos
+            ret = read_braceless_dict
+          end
+        else
+          @doc.scan(/"/)  # consume the quote
+          ret = read_quoted
+        end
       elsif @doc.scan(/</) # binary
         ret = read_binary
-      else # string w/o quotes
+      else # string w/o quotes OR braceless dict
+        # Save position to potentially backtrack
+        saved_pos = @doc.pos
         ret = read_unquoted
+
+        # Check if this might be a braceless dictionary
+        # Only allow this at the top level
+        if allow_braceless_dict
+          skip_whitespaces
+          if @doc.check(/=/)
+            # This is actually a braceless dictionary
+            # Restore position and parse as such
+            @doc.pos = saved_pos
+            ret = read_braceless_dict
+          end
+        end
       end
 
       return ret
