@@ -1,0 +1,6 @@
+/* Localization strings */
+"app.title" = "My App";
+
+// User facing messages
+"user.greeting" = "Welcome!";
+"user.farewell" = "Goodbye!";

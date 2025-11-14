@@ -63,6 +63,31 @@ class TestPlain < Minitest::Test
     assert_equal "\x00\n", parsed_plain('binary')
   end
 
+  def test_dictionary_braceless
+    assert_equal({ "foo" => "bar" }, parsed_plain("dictionary_braceless"))
+  end
+
+  def test_dictionary_braceless_multi
+    assert_equal({ "greeting" => "Hello", "farewell" => "Goodbye", "count" => 42 }, parsed_plain("dictionary_braceless_multi"))
+  end
+
+  def test_string_with_trailing_newline
+    assert_equal "foo\n", parsed_plain("string_with_trailing_newline")
+  end
+
+  def test_string_with_trailing_space
+    assert_equal "foo", parsed_plain("string_with_trailing_space")
+  end
+
+  def test_strings_file_format
+    expected = {
+      "app.title" => "My App",
+      "user.greeting" => "Welcome!",
+      "user.farewell" => "Goodbye!"
+    }
+    assert_equal expected, parsed_plain("strings_file")
+  end
+
   def test_serialize
     plist = CFPropertyList::List.new
 
